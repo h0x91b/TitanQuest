@@ -275,7 +275,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
 
         //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
         //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -287,7 +287,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         ImGui_ImplWin32_Init(hwnd);
         ImGui_ImplDX9_Init(g_pd3dDevice);
 
-        io.Fonts->AddFontDefault();
+        auto font = io.Fonts->AddFontDefault();
 
         //io.Fonts->Build();
         
