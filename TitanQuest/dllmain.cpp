@@ -17,11 +17,15 @@
 //#include "dx.h"
 #include "TQ_Types.h"
 
+#pragma region definitions
 void log(const char* fmt, ...);
-static VOID(WINAPI* TrueSleep)(DWORD dwMilliseconds) = Sleep;
 void* ByPtr(DWORD base, DWORD offset, ...);
-HMODULE engineDll = 0;
+HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters);
+// Forward declare message handler from imgui_impl_win32.cpp
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+#pragma endregion
 
+#pragma region old style typedefs
 typedef HRESULT(__stdcall* EndScene) (IDirect3DDevice9*);
 EndScene realEndScene = nullptr;
 
@@ -37,7 +41,9 @@ CharacterAddMoney* realCharacterAddMoney = nullptr;
 
 typedef uint (__fastcall GetItemCost)(void* _this, DWORD edx, bool p1);
 GetItemCost* realGetItemCost = nullptr;
+#pragma endregion
 
+#pragma region macros
 /*
 will generate something like:
 
@@ -59,13 +65,30 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
 
 //DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
 #define Detach(fnName) DetourDetach(&(PVOID&)real##fnName, _##fnName);
+#pragma endregion
 
-bool godMode = 0;
-int frame = 0;
-bool ignoreLevelRequirements = false;
-bool freezeMana = false;
-ImFont* defFont = nullptr;
+#pragma region vars
+    bool godMode = 0;
+    int frame = 0;
+    bool ignoreLevelRequirements = false;
+    bool freezeMana = false;
+    ImFont* defFont = nullptr;
+    int modifierPoints = 50;
+    Engine* pEngine = nullptr;
+    static LPDIRECT3D9 g_pD3D = NULL;
+    static LPDIRECT3DDEVICE9 g_pd3dDevice = NULL;
+    static D3DPRESENT_PARAMETERS g_d3dpp = {};
 
+    DWORD* pVTable;
+    HWND hwnd;
+    bool showUIDemo = false;
+
+    std::vector<std::string> _log;
+    WNDPROC originalWndProc = nullptr;
+    HMODULE engineDll = 0;
+#pragma endregion
+
+#pragma region thisCalls
 // 9843 -  float __thiscall GAME::Character::GetManaLimit(Character *this)
 thisCallHook(GetManaLimit, Character *, float) {
     return realGetManaLimit(_this, _edx);
@@ -114,17 +137,7 @@ thisCallHook(GetIntelligenceRequirement, void*, uint) {
         return 1;
     return realGetIntelligenceRequirement(_this, _edx);
 }
-
-Engine* pEngine = nullptr;
-static LPDIRECT3D9              g_pD3D = NULL;
-static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
-static D3DPRESENT_PARAMETERS    g_d3dpp = {};
-
-DWORD* pVTable;
-HWND hwnd;
-bool showUIDemo = false;
-
-std::vector<std::string> _log;
+#pragma endregion
 
 void log(const char *fmt, ...) {
     char buf[1024];
@@ -139,25 +152,11 @@ void log(const char *fmt, ...) {
     }
 }
 
-WNDPROC originalWndProc = nullptr;
-// Forward declare message handler from imgui_impl_win32.cpp
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
 static LRESULT __stdcall _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam))
         return true;
     return CallWindowProc(originalWndProc, window, msg, wParam, lParam);
 }
-
-VOID WINAPI TimedSleep(DWORD dwMilliseconds)
-{
-    WCHAR buf[256];
-    wsprintf(buf, L"sleep(%d)\r\n", dwMilliseconds);
-    OutputDebugString(buf);
-    TrueSleep(dwMilliseconds);
-}
-
-HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters);
 
 HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion) {
     //OutputDebugString(L"_Present\r\n");
@@ -197,6 +196,9 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui::Checkbox("Freeze mana", &freezeMana);
         ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
         ImGui::Checkbox("Demo UI", &showUIDemo);
+
+        static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
+        ImGui::SliderInt("Modifier points", &modifierPoints, 0, 100, "%d", flags);
 
         ImGui::BeginChild("Log");
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
@@ -428,7 +430,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
-        // DetourDetach(&(PVOID&)TrueSleep, TimedSleep);
         DetourDetach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
         DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
         DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
@@ -441,7 +442,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Detach(GetIntelligenceRequirement);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
-        // DetourDetach(&(PVOID&)TrueSleep, TimedSleep);
         DetourTransactionCommit();
 
     //    pVTable[42] = (DWORD)realEndScene;
