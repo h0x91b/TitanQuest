@@ -36,6 +36,37 @@ CharacterAddMoney* realCharacterAddMoney = nullptr;
 typedef uint (__fastcall GetItemCost)(void* _this, DWORD edx, bool p1);
 GetItemCost* realGetItemCost = nullptr;
 
+
+/*
+will generate something like:
+
+typedef uint (__fastcall GetItemCost)(void* _this, DWORD edx, bool p1);
+GetItemCost* realGetItemCost = nullptr;
+float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
+*/
+#define thisCallHook(fnName, thisType, retType, ...) typedef retType (__fastcall fnName)(thisType _this, DWORD _edx, __VA_ARGS__); \
+fnName* real##fnName = nullptr; \
+retType __fastcall _##fnName(thisType _this, DWORD _edx, __VA_ARGS__)
+
+//realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
+#define ProcAddr(hModule, fnName, ordinal) real##fnName = (fnName*)GetProcAddress(hModule, MAKEINTRESOURCEA(ordinal));
+
+//DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
+#define Attach(fnName) DetourAttach(&(PVOID&)real##fnName, _##fnName);
+
+//DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
+#define Detach(fnName) DetourDetach(&(PVOID&)real##fnName, _##fnName);
+
+bool godMode = 0;
+int frame = 0;
+bool ignoreLevelRequirements = false;
+
+thisCallHook(AreRequirementsMet, void*, bool, void* character) {
+    if(ignoreLevelRequirements)
+        return true;
+    return realAreRequirementsMet(_this, _edx, character);
+}
+
 Engine* pEngine = nullptr;
 static LPDIRECT3D9              g_pD3D = NULL;
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
@@ -96,6 +127,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui::Begin("The tool", 0, ImGuiWindowFlags_MenuBar);
 
         ImGui::Checkbox("God mode", &godMode);
+        ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
         //if (ImGui::BeginMenuBar())
         //{
         //    if (ImGui::BeginMenu("File"))
@@ -224,9 +256,12 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         HMODULE gameDll = GetModuleHandleA("game.dll");
         engineDll = GetModuleHandleA("Engine.dll");
         realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
+        ProcAddr(gameDll, GetCurrentMana, 8427);
         realCharacterAddMoney = (CharacterAddMoney*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5345));
         realGetItemCost = (GetItemCost*)GetProcAddress(gameDll, MAKEINTRESOURCEA(9000));
         pEngine = (Engine*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5377));
+
+        ProcAddr(gameDll, AreRequirementsMet, 5648);
 
         // "Engine.dll"+00365DF0 - pEngine
 
@@ -306,6 +341,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
         DetourAttach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
         DetourAttach(&(PVOID&)realGetItemCost, _GetItemCost);
+
+        Attach(AreRequirementsMet);
         //DetourAttach((PVOID*)pVTable[17], _Present);
         //DetourAttach((PVOID*)pVTable[16], _Reset);
         //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
@@ -327,6 +364,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourDetach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
         DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
         DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
+        Detach(AreRequirementsMet);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
         // DetourDetach(&(PVOID&)TrueSleep, TimedSleep);
