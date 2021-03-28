@@ -4,6 +4,9 @@
 
 #include <Windows.h>
 #include <d3d9.h>
+#include <string>
+#include <vector>
+#include <iostream>
 
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
@@ -14,6 +17,7 @@
 //#include "dx.h"
 #include "TQ_Types.h"
 
+void log(const char* fmt, ...);
 static VOID(WINAPI* TrueSleep)(DWORD dwMilliseconds) = Sleep;
 void* ByPtr(DWORD base, DWORD offset, ...);
 HMODULE engineDll = 0;
@@ -37,7 +41,6 @@ CharacterAddMoney* realCharacterAddMoney = nullptr;
 typedef uint (__fastcall GetItemCost)(void* _this, DWORD edx, bool p1);
 GetItemCost* realGetItemCost = nullptr;
 
-
 /*
 will generate something like:
 
@@ -46,14 +49,16 @@ GetItemCost* realGetItemCost = nullptr;
 float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
 */
 #define thisCallHook(fnName, thisType, retType, ...) typedef retType (__fastcall fnName)(thisType _this, DWORD _edx, __VA_ARGS__); \
-fnName* real##fnName = nullptr; \
-retType __fastcall _##fnName(thisType _this, DWORD _edx, __VA_ARGS__)
+  fnName* real##fnName = nullptr; \
+  retType __fastcall _##fnName(thisType _this, DWORD _edx, __VA_ARGS__)
 
 //realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
-#define ProcAddr(hModule, fnName, ordinal) real##fnName = (fnName*)GetProcAddress(hModule, MAKEINTRESOURCEA(ordinal));
+#define ProcAddr(hModule, fnName, ordinal) real##fnName = (fnName*)GetProcAddress(hModule, MAKEINTRESOURCEA(ordinal)); \
+  log("ProcAddr of %s - 0x%08X", #fnName, real##fnName)
 
 //DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
-#define Attach(fnName) DetourAttach(&(PVOID&)real##fnName, _##fnName);
+#define Attach(fnName) DetourAttach(&(PVOID&)real##fnName, _##fnName); \
+  log("Attach of %s", #fnName)
 
 //DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
 #define Detach(fnName) DetourDetach(&(PVOID&)real##fnName, _##fnName);
@@ -69,6 +74,38 @@ thisCallHook(AreRequirementsMet, void*, bool, void* character) {
     return realAreRequirementsMet(_this, _edx, character);
 }
 
+// 9102 - uint __thiscall GAME::ItemEquipment::GetLevelRequirement(ItemEquipment *this)
+thisCallHook(GetLevelRequirement, void*, uint) {
+    //log("GetLevelRequirement 0x%08X", _this);
+    if (ignoreLevelRequirements)
+        return 1;
+    return realGetLevelRequirement(_this, _edx);
+}
+
+// 11320 - uint __thiscall GAME::ItemEquipment::GetStrengthRequirement(ItemEquipment *this)
+thisCallHook(GetStrengthRequirement, void*, uint) {
+    //log("GetStrengthRequirement 0x%08X", _this);
+    if (ignoreLevelRequirements)
+        return 1;
+    return realGetStrengthRequirement(_this, _edx);
+}
+
+// 8591 - uint __thiscall GAME::ItemEquipment::GetDexterityRequirement(ItemEquipment *this)
+thisCallHook(GetDexterityRequirement, void*, uint) {
+    //log("GetDexterityRequirement 0x%08X", _this);
+    if (ignoreLevelRequirements)
+        return 1;
+    return realGetDexterityRequirement(_this, _edx);
+}
+
+// 8959 - uint __thiscall GAME::ItemEquipment::GetIntelligenceRequirement(ItemEquipment *this)
+thisCallHook(GetIntelligenceRequirement, void*, uint) {
+    //log("GetIntelligenceRequirement 0x%08X", _this);
+    if (ignoreLevelRequirements)
+        return 1;
+    return realGetIntelligenceRequirement(_this, _edx);
+}
+
 Engine* pEngine = nullptr;
 static LPDIRECT3D9              g_pD3D = NULL;
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
@@ -76,8 +113,23 @@ static D3DPRESENT_PARAMETERS    g_d3dpp = {};
 
 DWORD* pVTable;
 HWND hwnd;
+bool showUIDemo = false;
 
-bool showUIDemo = true;
+std::vector<std::string> _log;
+
+void log(const char *fmt, ...) {
+    char buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    auto len = vsnprintf(buf, 1024, fmt, args);
+    va_end(args);
+    _log.push_back(buf);
+
+    if (_log.size() > 100) {
+        _log.erase(_log.begin());
+    }
+}
+
 WNDPROC originalWndProc = nullptr;
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -136,32 +188,16 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
         ImGui::Checkbox("Demo UI", &showUIDemo);
 
-        
-        //if (ImGui::BeginMenuBar())
-        //{
-        //    if (ImGui::BeginMenu("File"))
-        //    {
-        //        if (ImGui::MenuItem("Open..", "Ctrl+O")) { /* Do stuff */ }
-        //        if (ImGui::MenuItem("Save", "Ctrl+S")) { /* Do stuff */ }
-        //        if (ImGui::MenuItem("Close", "Ctrl+W")) { my_tool_active = false; }
-        //        ImGui::EndMenu();
-        //    }
-        //    ImGui::EndMenuBar();
-        //}
+        ImGui::BeginChild("Log");
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
-        //// Edit a color (stored as ~4 floats)
-        //ImGui::ColorEdit4("Color", my_color);
+        for (auto i = _log.rbegin(); i != _log.rend(); i++) {
+            ImGui::Text("> %s", i->c_str());
+        }
+            
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
 
-        //// Plot some values
-        //const float my_values[] = { 0.2f, 0.1f, 1.0f, 0.5f, 0.9f, 2.2f };
-        //ImGui::PlotLines("Frame Times", my_values, IM_ARRAYSIZE(my_values));
-
-        //// Display contents in a scrolling region
-        //ImGui::TextColored(ImVec4(1, 1, 0, 1), "Important Stuff");
-        //ImGui::BeginChild("Scrolling");
-        //for (int n = 0; n < 50; n++)
-        //    ImGui::Text("%04d: Some text", n);
-        //ImGui::EndChild();
         ImGui::End();
         ImGui::PopFont();
     }
@@ -264,8 +300,12 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
 
+        log("DLL_PROCESS_ATTACH");
+
         HMODULE gameDll = GetModuleHandleA("game.dll");
+        log("gameDll %08X", gameDll);
         engineDll = GetModuleHandleA("Engine.dll");
+        log("engineDll %08X", engineDll);
         realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
         ProcAddr(gameDll, GetCurrentMana, 8427);
         realCharacterAddMoney = (CharacterAddMoney*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5345));
@@ -273,6 +313,12 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         pEngine = (Engine*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5377));
 
         ProcAddr(gameDll, AreRequirementsMet, 5648);
+        ProcAddr(gameDll, GetLevelRequirement, 9102);
+        ProcAddr(gameDll, GetStrengthRequirement, 11320);
+        ProcAddr(gameDll, GetDexterityRequirement, 8591);
+        ProcAddr(gameDll, GetIntelligenceRequirement, 8959);
+
+        log("getting dx");
 
         // "Engine.dll"+00365DF0 - pEngine
 
@@ -286,6 +332,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         // way #2
 
         dx_s1* dx = *(dx_s1**) ((DWORD)engineDll + 0x00366740);
+        log("getting dx2");
         dx_s2* dx2 = *(dx_s2**) ((DWORD)engineDll + 0x00365E48);
 
 
@@ -313,7 +360,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         //    25c <<<<< byte
 //
 ////        dx_s1* dx = (dx_s1*) *(DWORD*)(engineDll + 0x00366740);
+
+        log("getting g_pD3D");
         g_pD3D = (LPDIRECT3D9)dx->g_pD3D;
+        log("getting g_pd3dDevice");
         g_pd3dDevice = (LPDIRECT3DDEVICE9)dx2->g_pd3dDevice;
 
         //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -350,6 +400,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourAttach(&(PVOID&)realGetItemCost, _GetItemCost);
 
         Attach(AreRequirementsMet);
+        Attach(GetLevelRequirement);
+        Attach(GetStrengthRequirement);
+        Attach(GetDexterityRequirement);
+        Attach(GetIntelligenceRequirement);
         //DetourAttach((PVOID*)pVTable[17], _Present);
         //DetourAttach((PVOID*)pVTable[16], _Reset);
         //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
@@ -372,6 +426,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
         DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
         Detach(AreRequirementsMet);
+        Detach(GetLevelRequirement);
+        Detach(GetStrengthRequirement);
+        Detach(GetDexterityRequirement);
+        Detach(GetIntelligenceRequirement);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
         // DetourDetach(&(PVOID&)TrueSleep, TimedSleep);
