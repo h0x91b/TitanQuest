@@ -32,9 +32,6 @@ Present realPresent = nullptr;
 typedef HRESULT(__stdcall* Reset) (IDirect3DDevice9*, D3DPRESENT_PARAMETERS* pPresentationParameters);
 Reset realReset = nullptr;
 
-typedef float (__fastcall GetCurrentMana)(Character* _this, DWORD edx);
-GetCurrentMana* realGetCurrentMana = nullptr;
-
 typedef float (__fastcall CharacterAddMoney)(Character* _this, DWORD edx, uint money);
 CharacterAddMoney* realCharacterAddMoney = nullptr;
 
@@ -66,7 +63,19 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
 bool godMode = 0;
 int frame = 0;
 bool ignoreLevelRequirements = false;
+bool freezeMana = false;
 ImFont* defFont = nullptr;
+
+// 9843 -  float __thiscall GAME::Character::GetManaLimit(Character *this)
+thisCallHook(GetManaLimit, Character *, float) {
+    return realGetManaLimit(_this, _edx);
+}
+
+thisCallHook(GetCurrentMana, Character *, float) {
+    if (freezeMana)
+        return realGetManaLimit(_this, _edx);
+    return realGetCurrentMana(_this, _edx);
+}
 
 thisCallHook(AreRequirementsMet, void*, bool, void* character) {
     if(ignoreLevelRequirements)
@@ -185,6 +194,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui::Begin("The tool", 0, windowFlags);
 
         ImGui::Checkbox("God mode", &godMode);
+        ImGui::Checkbox("Freeze mana", &freezeMana);
         ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
         ImGui::Checkbox("Demo UI", &showUIDemo);
 
@@ -238,12 +248,6 @@ HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentati
 HRESULT __stdcall _EndScene(IDirect3DDevice9* d) {
     //OutputDebugString(L"_EndScene\r\n");
     return realEndScene(d);
-}
-
-float __fastcall _GetCurrentMana(Character* _this, DWORD edx) {
-    // OutputDebugString(L"_GetCurrentMana\r\n");
-    // _this->health = 150.0f;
-    return realGetCurrentMana(_this, edx) - 50;
 }
 
 float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money) {
@@ -306,12 +310,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         log("gameDll %08X", gameDll);
         engineDll = GetModuleHandleA("Engine.dll");
         log("engineDll %08X", engineDll);
-        realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
-        ProcAddr(gameDll, GetCurrentMana, 8427);
+        
         realCharacterAddMoney = (CharacterAddMoney*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5345));
         realGetItemCost = (GetItemCost*)GetProcAddress(gameDll, MAKEINTRESOURCEA(9000));
         pEngine = (Engine*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5377));
 
+        ProcAddr(gameDll, GetCurrentMana, 8427);
+        ProcAddr(gameDll, GetManaLimit, 9843);
         ProcAddr(gameDll, AreRequirementsMet, 5648);
         ProcAddr(gameDll, GetLevelRequirement, 9102);
         ProcAddr(gameDll, GetStrengthRequirement, 11320);
@@ -399,6 +404,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourAttach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
         DetourAttach(&(PVOID&)realGetItemCost, _GetItemCost);
 
+        Attach(GetCurrentMana);
+        Attach(GetManaLimit);
         Attach(AreRequirementsMet);
         Attach(GetLevelRequirement);
         Attach(GetStrengthRequirement);
@@ -425,6 +432,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DetourDetach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
         DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
         DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
+        Detach(GetCurrentMana);
+        Detach(GetManaLimit);
         Detach(AreRequirementsMet);
         Detach(GetLevelRequirement);
         Detach(GetStrengthRequirement);
