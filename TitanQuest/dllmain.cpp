@@ -9,9 +9,10 @@
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 
-#include "Character.h"
-#include "Engine.dll.h"
-#include "dx.h"
+//#include "Character.h"
+//#include "Engine.dll.h"
+//#include "dx.h"
+#include "TQ_Types.h"
 
 static VOID(WINAPI* TrueSleep)(DWORD dwMilliseconds) = Sleep;
 void* ByPtr(DWORD base, DWORD offset, ...);
@@ -60,6 +61,7 @@ retType __fastcall _##fnName(thisType _this, DWORD _edx, __VA_ARGS__)
 bool godMode = 0;
 int frame = 0;
 bool ignoreLevelRequirements = false;
+ImFont* defFont = nullptr;
 
 thisCallHook(AreRequirementsMet, void*, bool, void* character) {
     if(ignoreLevelRequirements)
@@ -75,7 +77,7 @@ static D3DPRESENT_PARAMETERS    g_d3dpp = {};
 DWORD* pVTable;
 HWND hwnd;
 
-bool show_demo_window = true;
+bool showUIDemo = true;
 WNDPROC originalWndProc = nullptr;
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -94,27 +96,25 @@ VOID WINAPI TimedSleep(DWORD dwMilliseconds)
     TrueSleep(dwMilliseconds);
 }
 
-void ResetDevice()
-{
-    ImGui_ImplDX9_InvalidateDeviceObjects();
-    HRESULT hr = g_pd3dDevice->Reset(&g_d3dpp);
-    if (hr == D3DERR_INVALIDCALL)
-        IM_ASSERT(0);
-    ImGui_ImplDX9_CreateDeviceObjects();
-}
+HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters);
 
 HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion) {
     //OutputDebugString(L"_Present\r\n");
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    if (!defFont || !io.Fonts->IsBuilt()) {
+        OutputDebugString(L"_Present font is not built\r\n");
+        defFont = io.Fonts->AddFontDefault();
+        io.Fonts->Build();
+        IM_ASSERT(defFont && defFont->IsLoaded());
+    }
+
     // Start the Dear ImGui frame
     ImGui_ImplDX9_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
-
-    //if (show_demo_window) {
-    //    ImGui::ShowDemoWindow(&show_demo_window);
-    //}
 
     if (frame++ % 10 == 0) {
         BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
@@ -123,11 +123,20 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         }
     }
 
+    if (showUIDemo) {
+        ImGui::ShowDemoWindow(&showUIDemo);
+    }
+
     {
-        ImGui::Begin("The tool", 0, ImGuiWindowFlags_MenuBar);
+        ImGui::PushFont(defFont);
+        ImGuiWindowFlags windowFlags = 0;
+        ImGui::Begin("The tool", 0, windowFlags);
 
         ImGui::Checkbox("God mode", &godMode);
         ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
+        ImGui::Checkbox("Demo UI", &showUIDemo);
+
+        
         //if (ImGui::BeginMenuBar())
         //{
         //    if (ImGui::BeginMenu("File"))
@@ -154,6 +163,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         //    ImGui::Text("%04d: Some text", n);
         //ImGui::EndChild();
         ImGui::End();
+        ImGui::PopFont();
     }
 
     // Rendering
@@ -173,7 +183,8 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     HRESULT result = realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
     if (result == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET) {
         OutputDebugString(L"D3DERR_DEVICELOST\r\n");
-        ResetDevice();
+        // ResetDevice();
+        _Reset(d, &g_d3dpp);
     }
     return result;
 }
@@ -333,10 +344,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
         ImGui_ImplWin32_Init(hwnd);
         ImGui_ImplDX9_Init(g_pd3dDevice);
-
-        auto font = io.Fonts->AddFontDefault();
-
-        //io.Fonts->Build();
         
         DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
         DetourAttach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);

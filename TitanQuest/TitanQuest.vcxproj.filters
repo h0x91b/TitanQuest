@@ -45,6 +45,9 @@
     <ClInclude Include="dx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TQ_Types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
