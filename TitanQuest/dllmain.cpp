@@ -39,6 +39,7 @@ GetItemCost* realGetItemCost = nullptr;
 Engine* pEngine = nullptr;
 static LPDIRECT3D9              g_pD3D = NULL;
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
+static D3DPRESENT_PARAMETERS    g_d3dpp = {};
 
 DWORD* pVTable;
 HWND hwnd;
@@ -62,8 +63,14 @@ VOID WINAPI TimedSleep(DWORD dwMilliseconds)
     TrueSleep(dwMilliseconds);
 }
 
-bool godMode = 0;
-int frame = 0;
+void ResetDevice()
+{
+    ImGui_ImplDX9_InvalidateDeviceObjects();
+    HRESULT hr = g_pd3dDevice->Reset(&g_d3dpp);
+    if (hr == D3DERR_INVALIDCALL)
+        IM_ASSERT(0);
+    ImGui_ImplDX9_CreateDeviceObjects();
+}
 
 HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion) {
     //OutputDebugString(L"_Present\r\n");
@@ -131,7 +138,12 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
         g_pd3dDevice->EndScene();
     }
-    return realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+    HRESULT result = realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+    if (result == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET) {
+        OutputDebugString(L"D3DERR_DEVICELOST\r\n");
+        ResetDevice();
+    }
+    return result;
 }
 
 HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters) {
