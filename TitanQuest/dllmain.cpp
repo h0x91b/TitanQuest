@@ -47,12 +47,15 @@ GetItemCost* realGetItemCost = nullptr;
 /*
 will generate something like:
 
-typedef uint (__fastcall GetItemCost)(void* _this, DWORD edx, bool p1);
+typedef uint (__fastcall GetItemCost)(void* _this, DWORD _edx, bool p1);
 GetItemCost* realGetItemCost = nullptr;
 float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
 */
 #define thisCallHook(fnName, thisType, retType, ...) typedef retType (__fastcall fnName)(thisType _this, DWORD _edx, __VA_ARGS__); \
   fnName* real##fnName = nullptr; \
+  PDETOUR_TRAMPOLINE trampoline_##fnName = nullptr; \
+  void* target_##fnName = nullptr; \
+  void* real_##fnName = nullptr; \
   retType __fastcall _##fnName(thisType _this, DWORD _edx, __VA_ARGS__)
 
 //realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
@@ -60,8 +63,8 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
   log("ProcAddr of %s - 0x%08X", #fnName, real##fnName)
 
 //DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
-#define Attach(fnName) DetourAttach(&(PVOID&)real##fnName, _##fnName); \
-  log("Attach of %s", #fnName)
+#define Attach(fnName) DetourAttachEx(&(PVOID&)real##fnName, _##fnName, &trampoline_##fnName, &target_##fnName, &real_##fnName); \
+  log("Attach of %s target: 0x%08X real: 0x%08X", #fnName, target_##fnName, real_##fnName)
 
 //DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
 #define Detach(fnName) DetourDetach(&(PVOID&)real##fnName, _##fnName);
@@ -73,7 +76,7 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
     bool ignoreLevelRequirements = false;
     bool freezeMana = false;
     ImFont* defFont = nullptr;
-    int modifierPoints = 50;
+    int expMultiplier = 1;
     Engine* pEngine = nullptr;
     static LPDIRECT3D9 g_pD3D = NULL;
     static LPDIRECT3DDEVICE9 g_pd3dDevice = NULL;
@@ -137,6 +140,24 @@ thisCallHook(GetIntelligenceRequirement, void*, uint) {
         return 1;
     return realGetIntelligenceRequirement(_this, _edx);
 }
+
+// 9931 - uint __thiscall GAME::Character::GetModifierPoints(Character *this)
+thisCallHook(GetModifierPoints, Character*, uint) {
+    //log("GetModifierPoints 0x%08X", _this);
+    return realGetModifierPoints(_this, _edx);
+}
+
+// 15499 - void __thiscall GAME::CharAttribute::SetBaseValue(CharAttribute *this,float param_1)
+thisCallHook(SetBaseValue, void*, void, float val) {
+    log("SetBaseValue - on %08X = %.f", _this, val);
+    realSetBaseValue(_this, _edx, val);
+}
+
+// 14523 - void __thiscall GAME::Character::ReceiveExperience(Character *this,uint exp,bool param_2)
+thisCallHook(ReceiveExperience, Character*, void, uint exp, bool someBool) {
+    log("ReceiveExperience - %d bool %d", exp, someBool);
+    realReceiveExperience(_this, _edx, exp * expMultiplier, someBool);
+}
 #pragma endregion
 
 void log(const char *fmt, ...) {
@@ -198,7 +219,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui::Checkbox("Demo UI", &showUIDemo);
 
         static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
-        ImGui::SliderInt("Modifier points", &modifierPoints, 0, 100, "%d", flags);
+        ImGui::SliderInt("Experience multiplier", &expMultiplier, 1, 50, "%d", flags);
 
         ImGui::BeginChild("Log");
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
@@ -324,6 +345,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         ProcAddr(gameDll, GetStrengthRequirement, 11320);
         ProcAddr(gameDll, GetDexterityRequirement, 8591);
         ProcAddr(gameDll, GetIntelligenceRequirement, 8959);
+        ProcAddr(gameDll, GetModifierPoints, 9931);
+        ProcAddr(gameDll, SetBaseValue, 15499);
+        ProcAddr(gameDll, ReceiveExperience, 14523);
 
         log("getting dx");
 
@@ -342,7 +366,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         log("getting dx2");
         dx_s2* dx2 = *(dx_s2**) ((DWORD)engineDll + 0x00365E48);
 
-
         //DWORD a = ((DWORD)engineDll + 0x00365DF0);
         //a = *(DWORD*)a;
         //a += 0x218;
@@ -350,23 +373,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         //a += 0x74;
         //a = *(DWORD*)a;
         //a += 0xc25;
-
         //BYTE* target = (BYTE*)a;
 
         //BYTE* target2 = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
-
-        //a += 0x218;
-    //a = *(DWORD*)a;
-        
-//        b = (*(DWORD*)a + 0x218)
-        
-        // *(BYTE*)(*(DWORD*)(*(DWORD*) ((DWORD)engineDll + 0x00365DF0) + 0x218) + 0x74) + 0x25c)
-        //"Engine.dll" + 00365DF0
-        //218
-        //74
-        //    25c <<<<< byte
-//
-////        dx_s1* dx = (dx_s1*) *(DWORD*)(engineDll + 0x00366740);
 
         log("getting g_pD3D");
         g_pD3D = (LPDIRECT3D9)dx->g_pD3D;
@@ -413,6 +422,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Attach(GetStrengthRequirement);
         Attach(GetDexterityRequirement);
         Attach(GetIntelligenceRequirement);
+        Attach(GetModifierPoints);
+        Attach(SetBaseValue);
+        Attach(ReceiveExperience);
+
         //DetourAttach((PVOID*)pVTable[17], _Present);
         //DetourAttach((PVOID*)pVTable[16], _Reset);
         //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
@@ -440,6 +453,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Detach(GetStrengthRequirement);
         Detach(GetDexterityRequirement);
         Detach(GetIntelligenceRequirement);
+        Detach(GetModifierPoints);
+        Detach(SetBaseValue);
+        Detach(ReceiveExperience);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
         DetourTransactionCommit();
