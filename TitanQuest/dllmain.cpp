@@ -201,9 +201,16 @@ void log(const char *fmt, ...) {
     }
 }
 
-static LRESULT __stdcall _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam))
-        return true;
+static LRESULT CALLBACK _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
+    ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam);
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (io.WantCaptureMouse
+        || io.WantCaptureKeyboard
+    ) {
+        return TRUE;
+    }
     return CallWindowProc(originalWndProc, window, msg, wParam, lParam);
 }
 
@@ -214,8 +221,15 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    if (!defFont || !io.Fonts->IsBuilt()) {
-        OutputDebugString(L"_Present font is not built\r\n");
+    if (!defFont) {
+        OutputDebugString(L"_Present defFont is not built\r\n");
+        defFont = io.Fonts->AddFontDefault();
+        io.Fonts->Build();
+        IM_ASSERT(defFont && defFont->IsLoaded());
+    }
+
+    if (!io.Fonts->IsBuilt()) {
+        OutputDebugString(L"_Present io.Fonts->IsBuilt()\r\n");
         defFont = io.Fonts->AddFontDefault();
         io.Fonts->Build();
         IM_ASSERT(defFont && defFont->IsLoaded());
@@ -406,17 +420,184 @@ bool GetD3D9Device(void** pTable, size_t size) {
 
 DWORD WINAPI MainThread(HMODULE hModule) {
 
+    // DirectX dummy method to find vt
     if (GetD3D9Device(d3dDevice, sizeof(d3dDevice))) {
 
     }
+
+    DetourRestoreAfterWith();
+
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+
+    log("DLL_PROCESS_ATTACH");
+
+    HMODULE gameDll = GetModuleHandleA("game.dll");
+    log("gameDll %08X", gameDll);
+    HMODULE direct3d_dll = GetModuleHandleA("direct3d.dll");
+    log("direct3d %08X", direct3d_dll);
+    engineDll = GetModuleHandleA("Engine.dll");
+    log("engineDll %08X", engineDll);
+
+    realCharacterAddMoney = (CharacterAddMoney*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5345));
+    realGetItemCost = (GetItemCost*)GetProcAddress(gameDll, MAKEINTRESOURCEA(9000));
+    pEngine = (Engine*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5377));
+
+    ProcAddr(gameDll, GetCurrentMana, 8427);
+    ProcAddr(gameDll, GetManaLimit, 9843);
+    ProcAddr(gameDll, AreRequirementsMet, 5648);
+    ProcAddr(gameDll, GetLevelRequirement, 9102);
+    ProcAddr(gameDll, GetStrengthRequirement, 11320);
+    ProcAddr(gameDll, GetDexterityRequirement, 8591);
+    ProcAddr(gameDll, GetIntelligenceRequirement, 8959);
+    ProcAddr(gameDll, GetModifierPoints, 9931);
+    ProcAddr(gameDll, SetBaseValue, 15499);
+    ProcAddr(gameDll, ReceiveExperience, 14523);
+    ProcAddr(gameDll, GetMainPlayer, 9837);
+    ProcAddr(direct3d_dll, CreateRenderDevice, 2);
+    ProcAddr(direct3d_dll, ResetRenderDevice, 4);
+
+    log("getting dx");
+
+    // "Engine.dll"+00365DF0 - pEngine
+
+    // "Engine.dll"+00366740
+
+    //void *ptr = (void*)(*(DWORD*)((DWORD)engineDll + 0x00366740));
+
+    // way #1
+    // dx_s1* dx = (dx_s1*) *(DWORD*) ((DWORD)engineDll + 0x00366740);
+
+    // way #2
+
+    dx_s1* dx = *(dx_s1**)((DWORD)engineDll + 0x00366740);
+    log("getting dx2");
+    dx_s2* dx2 = *(dx_s2**)((DWORD)engineDll + 0x00365E48);
+
+    //DWORD a = ((DWORD)engineDll + 0x00365DF0);
+    //a = *(DWORD*)a;
+    //a += 0x218;
+    //a = *(DWORD*)a;
+    //a += 0x74;
+    //a = *(DWORD*)a;
+    //a += 0xc25;
+    //BYTE* target = (BYTE*)a;
+
+    //BYTE* target2 = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
+
+    log("getting g_pD3D");
+    g_pD3D = (LPDIRECT3D9)dx->g_pD3D;
+    log("getting g_pd3dDevice");
+    g_pd3dDevice = (LPDIRECT3DDEVICE9)dx2->g_pd3dDevice;
+
+    //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    hwnd = FindWindow(NULL, L"Titan Quest Anniversary Edition");
+
+    //originalWndProc = WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(_wndProc)));
+    originalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_wndProc)));
+
+    pVTable = *reinterpret_cast<DWORD**>(g_pd3dDevice);
+
+    //        realEndScene = (EndScene)pVTable[42];
+    realReset = (Reset)pVTable[16];
+    realPresent = (Present)pVTable[17];
+
+    //      pVTable[42] = (DWORD)_EndScene;
+
+            //pVTable[17] = (DWORD)_Present;
+            //pVTable[16] = (DWORD)_Reset;
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsClassic();
+
+    ImGui_ImplWin32_Init(hwnd);
+    ImGui_ImplDX9_Init(g_pd3dDevice);
+
+    DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
+    DetourAttach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
+    DetourAttach(&(PVOID&)realGetItemCost, _GetItemCost);
+
+    Attach(GetCurrentMana);
+    Attach(GetManaLimit);
+    Attach(AreRequirementsMet);
+    Attach(GetLevelRequirement);
+    Attach(GetStrengthRequirement);
+    Attach(GetDexterityRequirement);
+    Attach(GetIntelligenceRequirement);
+    Attach(GetModifierPoints);
+    Attach(SetBaseValue);
+    Attach(ReceiveExperience);
+    Attach(GetMainPlayer);
+    Attach(CreateRenderDevice);
+    Attach(ResetRenderDevice);
+
+    //DetourAttach((PVOID*)pVTable[17], _Present);
+    //DetourAttach(&(PVOID&)pVTable[17], _Present);
+    DetourAttach(&(PVOID&)realPresent, _Present);
+    DetourAttach(&(PVOID&)realReset, _Reset);
+    //DetourAttach((PVOID*)pVTable[16], _Reset);
+    //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
+    DetourTransactionCommit();
 
     while (!GetAsyncKeyState(VK_END)) {
         Sleep(50);
     }
 
-    isExiting = true;
-    Sleep(1000);
+    OutputDebugString(L"Dettach and shutdown everything\r\n");
 
+    isExiting = true;
+
+    // SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(originalWndProc));
+    // WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(originalWndProc)));
+
+    OutputDebugString(L"DetourTransactionBegin\r\n");
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+
+    OutputDebugString(L"ImGui_ImplDX9_Shutdown\r\n");
+    ImGui_ImplDX9_Shutdown();
+    OutputDebugString(L"ImGui_ImplWin32_Shutdown\r\n");
+    ImGui_ImplWin32_Shutdown();
+    OutputDebugString(L"DestroyContext\r\n");
+    ImGui::DestroyContext();
+
+    OutputDebugString(L"SetWindowLongA\r\n");
+    SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(originalWndProc));
+
+    OutputDebugString(L"DetourDetach all\r\n");
+    DetourDetach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
+    DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
+    DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
+    Detach(GetCurrentMana);
+    Detach(GetManaLimit);
+    Detach(AreRequirementsMet);
+    Detach(GetLevelRequirement);
+    Detach(GetStrengthRequirement);
+    Detach(GetDexterityRequirement);
+    Detach(GetIntelligenceRequirement);
+    Detach(GetModifierPoints);
+    Detach(SetBaseValue);
+    Detach(ReceiveExperience);
+    Detach(GetMainPlayer);
+    Detach(CreateRenderDevice);
+    Detach(ResetRenderDevice);
+    //        DetourDetach((PVOID*)pVTable[17], _Present);
+    //        DetourDetach((PVOID*)pVTable[16], _Reset);
+    DetourDetach(&(PVOID&)realPresent, _Present);
+    DetourDetach(&(PVOID&)realReset, _Reset);
+    DetourTransactionCommit();
+
+    //    pVTable[42] = (DWORD)realEndScene;
+        //pVTable[17] = (DWORD)realPresent;
+        //pVTable[16] = (DWORD)realReset;
     FreeLibraryAndExitThread(hModule, 0);
 }
 
@@ -431,169 +612,11 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
     if (dwReason == DLL_PROCESS_ATTACH) {
 //        MessageBox(0, L"Injected DLL", L"Inject", 0);
-        DetourRestoreAfterWith();
-
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-
-        log("DLL_PROCESS_ATTACH");
-
-        HMODULE gameDll = GetModuleHandleA("game.dll");
-        log("gameDll %08X", gameDll);
-        HMODULE direct3d_dll = GetModuleHandleA("direct3d.dll");
-        log("direct3d %08X", direct3d_dll);
-        engineDll = GetModuleHandleA("Engine.dll");
-        log("engineDll %08X", engineDll);
-        
-        realCharacterAddMoney = (CharacterAddMoney*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5345));
-        realGetItemCost = (GetItemCost*)GetProcAddress(gameDll, MAKEINTRESOURCEA(9000));
-        pEngine = (Engine*)GetProcAddress(gameDll, MAKEINTRESOURCEA(5377));
-
-        ProcAddr(gameDll, GetCurrentMana, 8427);
-        ProcAddr(gameDll, GetManaLimit, 9843);
-        ProcAddr(gameDll, AreRequirementsMet, 5648);
-        ProcAddr(gameDll, GetLevelRequirement, 9102);
-        ProcAddr(gameDll, GetStrengthRequirement, 11320);
-        ProcAddr(gameDll, GetDexterityRequirement, 8591);
-        ProcAddr(gameDll, GetIntelligenceRequirement, 8959);
-        ProcAddr(gameDll, GetModifierPoints, 9931);
-        ProcAddr(gameDll, SetBaseValue, 15499);
-        ProcAddr(gameDll, ReceiveExperience, 14523);
-        ProcAddr(gameDll, GetMainPlayer, 9837);
-        ProcAddr(direct3d_dll, CreateRenderDevice, 2);
-        ProcAddr(direct3d_dll, ResetRenderDevice, 4);
-
-        log("getting dx");
-
-        // "Engine.dll"+00365DF0 - pEngine
-
-        // "Engine.dll"+00366740
-
-        //void *ptr = (void*)(*(DWORD*)((DWORD)engineDll + 0x00366740));
-
-        // way #1
-        // dx_s1* dx = (dx_s1*) *(DWORD*) ((DWORD)engineDll + 0x00366740);
-        
-        // way #2
-
-        dx_s1* dx = *(dx_s1**) ((DWORD)engineDll + 0x00366740);
-        log("getting dx2");
-        dx_s2* dx2 = *(dx_s2**) ((DWORD)engineDll + 0x00365E48);
-
-        //DWORD a = ((DWORD)engineDll + 0x00365DF0);
-        //a = *(DWORD*)a;
-        //a += 0x218;
-        //a = *(DWORD*)a;
-        //a += 0x74;
-        //a = *(DWORD*)a;
-        //a += 0xc25;
-        //BYTE* target = (BYTE*)a;
-
-        //BYTE* target2 = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
-
-        log("getting g_pD3D");
-        g_pD3D = (LPDIRECT3D9)dx->g_pD3D;
-        log("getting g_pd3dDevice");
-        g_pd3dDevice = (LPDIRECT3DDEVICE9)dx2->g_pd3dDevice;
-
-        // DirectX dummy method to find vt
-        auto thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)MainThread, hModule, 0, 0);
-        CloseHandle(thread);
-
-        //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
-        hwnd = FindWindow(NULL, L"Titan Quest Anniversary Edition");
-
-        //originalWndProc = WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(_wndProc)));
-        originalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_wndProc)));
-
-        pVTable = *reinterpret_cast<DWORD**>(g_pd3dDevice);
-
-//        realEndScene = (EndScene)pVTable[42];
-        realReset = (Reset)pVTable[16];
-        realPresent = (Present)pVTable[17];
-
-//      pVTable[42] = (DWORD)_EndScene;
-
-        //pVTable[17] = (DWORD)_Present;
-        //pVTable[16] = (DWORD)_Reset;
-
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
-
-        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-        // Setup Dear ImGui style
-        ImGui::StyleColorsDark();
-        //ImGui::StyleColorsClassic();
-
-        ImGui_ImplWin32_Init(hwnd);
-        ImGui_ImplDX9_Init(g_pd3dDevice);
-        
-        DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
-        DetourAttach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
-        DetourAttach(&(PVOID&)realGetItemCost, _GetItemCost);
-
-        Attach(GetCurrentMana);
-        Attach(GetManaLimit);
-        Attach(AreRequirementsMet);
-        Attach(GetLevelRequirement);
-        Attach(GetStrengthRequirement);
-        Attach(GetDexterityRequirement);
-        Attach(GetIntelligenceRequirement);
-        Attach(GetModifierPoints);
-        Attach(SetBaseValue);
-        Attach(ReceiveExperience);
-        Attach(GetMainPlayer);
-        Attach(CreateRenderDevice);
-        Attach(ResetRenderDevice);
-
-        //DetourAttach((PVOID*)pVTable[17], _Present);
-        //DetourAttach(&(PVOID&)pVTable[17], _Present);
-        DetourAttach(&(PVOID&)realPresent, _Present);
-        DetourAttach(&(PVOID&)realReset, _Reset);
-        //DetourAttach((PVOID*)pVTable[16], _Reset);
-        //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
-        DetourTransactionCommit();
+// 
+        CloseHandle(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)MainThread, hModule, 0, 0));
     }
     else if (dwReason == DLL_PROCESS_DETACH) {
-        ImGui_ImplDX9_Shutdown();
-        ImGui_ImplWin32_Shutdown();
-        ImGui::DestroyContext();
-
-        SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(originalWndProc));
-
-        // SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(originalWndProc));
-        // WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(originalWndProc)));
-
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-        DetourDetach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
-        DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
-        DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
-        Detach(GetCurrentMana);
-        Detach(GetManaLimit);
-        Detach(AreRequirementsMet);
-        Detach(GetLevelRequirement);
-        Detach(GetStrengthRequirement);
-        Detach(GetDexterityRequirement);
-        Detach(GetIntelligenceRequirement);
-        Detach(GetModifierPoints);
-        Detach(SetBaseValue);
-        Detach(ReceiveExperience);
-        Detach(GetMainPlayer);
-        Detach(CreateRenderDevice);
-        Detach(ResetRenderDevice);
-//        DetourDetach((PVOID*)pVTable[17], _Present);
-//        DetourDetach((PVOID*)pVTable[16], _Reset);
-        DetourDetach(&(PVOID&)realPresent, _Present);
-        DetourDetach(&(PVOID&)realReset, _Reset);
-        DetourTransactionCommit();
-
-    //    pVTable[42] = (DWORD)realEndScene;
-        //pVTable[17] = (DWORD)realPresent;
-        //pVTable[16] = (DWORD)realReset;
+        
     }
 
     return TRUE;
