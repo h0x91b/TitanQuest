@@ -96,6 +96,9 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
     std::vector<std::string> _log;
     WNDPROC originalWndProc = nullptr;
     HMODULE engineDll = 0;
+
+    void* d3dDevice[119];
+    bool isExiting = false;
 #pragma endregion
 
 #pragma region thisCalls
@@ -205,6 +208,7 @@ static LRESULT __stdcall _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM l
 }
 
 HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion) {
+    if(isExiting) return realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
     //OutputDebugString(L"_Present\r\n");
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
@@ -284,6 +288,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
 }
 
 HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters) {
+    if (isExiting) return realReset(d, pPresentationParameters);
     OutputDebugString(L"_Reset\r\n");
 
     ImGui_ImplDX9_InvalidateDeviceObjects();
@@ -334,6 +339,85 @@ void* ByPtr(DWORD base, DWORD offset, ...)
     }
     va_end(vl);
     return (void*)a;
+}
+
+HWND window = 0;
+
+BOOL CALLBACK enumWnd(HWND handle, LPARAM lp) {
+    DWORD procId = 0;
+    GetWindowThreadProcessId(handle, &procId);
+    if (GetCurrentProcessId() != procId)
+        return TRUE;
+
+    window = handle;
+    return false;
+}
+
+HWND GetProcessWindow() {
+    window = 0;
+    EnumWindows(enumWnd, NULL);
+    return window;
+}
+
+bool GetD3D9Device(void** pTable, size_t size) {
+    if (!pTable) return false;
+
+    IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+    if (!pD3D) return false;
+
+    IDirect3DDevice9* pDummyDevice = nullptr;
+
+    D3DPRESENT_PARAMETERS d3dpp = {};
+
+    d3dpp.Windowed = false;
+    d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    d3dpp.hDeviceWindow = GetProcessWindow();
+
+    HRESULT res = pD3D->CreateDevice(
+        D3DADAPTER_DEFAULT,
+        D3DDEVTYPE_HAL,
+        d3dpp.hDeviceWindow,
+        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+        &d3dpp,
+        &pDummyDevice
+    );
+
+    if (res != S_OK) {
+        d3dpp.Windowed = !d3dpp.Windowed;
+        res = pD3D->CreateDevice(
+            D3DADAPTER_DEFAULT,
+            D3DDEVTYPE_HAL,
+            d3dpp.hDeviceWindow,
+            D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+            &d3dpp,
+            &pDummyDevice
+        );
+        if (res != S_OK) {
+            pD3D->Release();
+            return false;
+        }
+    }
+
+    memcpy(pTable, *(void***)(pDummyDevice), size);
+    pDummyDevice->Release();
+    pD3D->Release();
+    return true;
+}
+
+DWORD WINAPI MainThread(HMODULE hModule) {
+
+    if (GetD3D9Device(d3dDevice, sizeof(d3dDevice))) {
+
+    }
+
+    while (!GetAsyncKeyState(VK_END)) {
+        Sleep(50);
+    }
+
+    isExiting = true;
+    Sleep(1000);
+
+    FreeLibraryAndExitThread(hModule, 0);
 }
 
 BOOL APIENTRY DllMain( HMODULE hModule,
@@ -412,6 +496,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         log("getting g_pd3dDevice");
         g_pd3dDevice = (LPDIRECT3DDEVICE9)dx2->g_pd3dDevice;
 
+        // DirectX dummy method to find vt
+        auto thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)MainThread, hModule, 0, 0);
+        CloseHandle(thread);
+
         //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
         hwnd = FindWindow(NULL, L"Titan Quest Anniversary Edition");
 
@@ -423,9 +511,11 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 //        realEndScene = (EndScene)pVTable[42];
         realReset = (Reset)pVTable[16];
         realPresent = (Present)pVTable[17];
-  //      pVTable[42] = (DWORD)_EndScene;
-        pVTable[17] = (DWORD)_Present;
-        pVTable[16] = (DWORD)_Reset;
+
+//      pVTable[42] = (DWORD)_EndScene;
+
+        //pVTable[17] = (DWORD)_Present;
+        //pVTable[16] = (DWORD)_Reset;
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -460,6 +550,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Attach(ResetRenderDevice);
 
         //DetourAttach((PVOID*)pVTable[17], _Present);
+        //DetourAttach(&(PVOID&)pVTable[17], _Present);
+        DetourAttach(&(PVOID&)realPresent, _Present);
+        DetourAttach(&(PVOID&)realReset, _Reset);
         //DetourAttach((PVOID*)pVTable[16], _Reset);
         //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
         DetourTransactionCommit();
@@ -494,11 +587,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Detach(ResetRenderDevice);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
+        DetourDetach(&(PVOID&)realPresent, _Present);
+        DetourDetach(&(PVOID&)realReset, _Reset);
         DetourTransactionCommit();
 
     //    pVTable[42] = (DWORD)realEndScene;
-        pVTable[17] = (DWORD)realPresent;
-        pVTable[16] = (DWORD)realReset;
+        //pVTable[17] = (DWORD)realPresent;
+        //pVTable[16] = (DWORD)realReset;
     }
 
     return TRUE;
