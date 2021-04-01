@@ -58,6 +58,13 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
   void* real_##fnName = nullptr; \
   retType __fastcall _##fnName(thisType _this, DWORD _edx, __VA_ARGS__)
 
+#define cdeclCallHook(fnName, retType, ...) typedef retType (__cdecl fnName)(__VA_ARGS__); \
+  fnName* real##fnName = nullptr; \
+  PDETOUR_TRAMPOLINE trampoline_##fnName = nullptr; \
+  void* target_##fnName = nullptr; \
+  void* real_##fnName = nullptr; \
+  retType __cdecl _##fnName(__VA_ARGS__)
+
 //realGetCurrentMana = (GetCurrentMana*)GetProcAddress(gameDll, MAKEINTRESOURCEA(8427));
 #define ProcAddr(hModule, fnName, ordinal) real##fnName = (fnName*)GetProcAddress(hModule, MAKEINTRESOURCEA(ordinal)); \
   log("ProcAddr of %s - 0x%08X", #fnName, real##fnName)
@@ -163,6 +170,18 @@ thisCallHook(ReceiveExperience, Character*, void, uint exp, bool someBool) {
 thisCallHook(GetMainPlayer, GameEngine*, Player*) {
     // log("GetMainPlayer");
     return realGetMainPlayer(_this, _edx);
+}
+
+// 2 - DWORD __cdecl CreateRenderDevice(Engine *param_1)
+cdeclCallHook(CreateRenderDevice, DWORD, Engine* param_1) {
+    log("CreateRenderDevice");
+    return realCreateRenderDevice(param_1);
+}
+
+// 4 - uint __cdecl ResetRenderDevice(int *param_1,undefined4 param_2)
+cdeclCallHook(ResetRenderDevice, uint, int* param_1, undefined4 param_2) {
+    log("ResetRenderDevice");
+    return realResetRenderDevice(param_1, param_2);
 }
 #pragma endregion
 
@@ -337,6 +356,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
         HMODULE gameDll = GetModuleHandleA("game.dll");
         log("gameDll %08X", gameDll);
+        HMODULE direct3d_dll = GetModuleHandleA("direct3d.dll");
+        log("direct3d %08X", direct3d_dll);
         engineDll = GetModuleHandleA("Engine.dll");
         log("engineDll %08X", engineDll);
         
@@ -355,6 +376,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         ProcAddr(gameDll, SetBaseValue, 15499);
         ProcAddr(gameDll, ReceiveExperience, 14523);
         ProcAddr(gameDll, GetMainPlayer, 9837);
+        ProcAddr(direct3d_dll, CreateRenderDevice, 2);
+        ProcAddr(direct3d_dll, ResetRenderDevice, 4);
 
         log("getting dx");
 
@@ -433,6 +456,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Attach(SetBaseValue);
         Attach(ReceiveExperience);
         Attach(GetMainPlayer);
+        Attach(CreateRenderDevice);
+        Attach(ResetRenderDevice);
 
         //DetourAttach((PVOID*)pVTable[17], _Present);
         //DetourAttach((PVOID*)pVTable[16], _Reset);
@@ -465,6 +490,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Detach(SetBaseValue);
         Detach(ReceiveExperience);
         Detach(GetMainPlayer);
+        Detach(CreateRenderDevice);
+        Detach(ResetRenderDevice);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
         DetourTransactionCommit();
