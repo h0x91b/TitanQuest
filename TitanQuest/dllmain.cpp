@@ -158,6 +158,12 @@ thisCallHook(ReceiveExperience, Character*, void, uint exp, bool someBool) {
     log("ReceiveExperience - %d bool %d", exp, someBool);
     realReceiveExperience(_this, _edx, exp * expMultiplier, someBool);
 }
+
+// 9837 - Player * __thiscall GAME::GameEngine::GetMainPlayer(GameEngine *this)
+thisCallHook(GetMainPlayer, GameEngine*, Player*) {
+    // log("GetMainPlayer");
+    return realGetMainPlayer(_this, _edx);
+}
 #pragma endregion
 
 void log(const char *fmt, ...) {
@@ -348,6 +354,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         ProcAddr(gameDll, GetModifierPoints, 9931);
         ProcAddr(gameDll, SetBaseValue, 15499);
         ProcAddr(gameDll, ReceiveExperience, 14523);
+        ProcAddr(gameDll, GetMainPlayer, 9837);
 
         log("getting dx");
 
@@ -425,6 +432,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Attach(GetModifierPoints);
         Attach(SetBaseValue);
         Attach(ReceiveExperience);
+        Attach(GetMainPlayer);
 
         //DetourAttach((PVOID*)pVTable[17], _Present);
         //DetourAttach((PVOID*)pVTable[16], _Reset);
@@ -456,6 +464,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         Detach(GetModifierPoints);
         Detach(SetBaseValue);
         Detach(ReceiveExperience);
+        Detach(GetMainPlayer);
 //        DetourDetach((PVOID*)pVTable[17], _Present);
 //        DetourDetach((PVOID*)pVTable[16], _Reset);
         DetourTransactionCommit();
