@@ -265,9 +265,11 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
 
     if (frame++ % 10 == 0) {
         Character* c = *(Character **)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
-        c->godMode = godMode;
-        c->invisible = invisible;
-        c->fastCasting = fastCasting;
+        if (c) {
+            c->godMode = godMode;
+            c->invisible = invisible;
+            c->fastCasting = fastCasting;
+        }
 
         //BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
         //if (pGodMode) {
@@ -281,28 +283,38 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
 
     {
         ImGui::PushFont(defFont);
+        ImGui::SetNextWindowBgAlpha(0.35f);
         ImGuiWindowFlags windowFlags = 0;
+        // windowFlags |= ImGuiWindowFlags_NoBackground;
         ImGui::Begin("The tool", 0, windowFlags);
 
-        ImGui::Checkbox("God mode", &godMode);
-        ImGui::Checkbox("Fast casting", &fastCasting);
-        ImGui::Checkbox("Invisible", &invisible);
-        ImGui::Checkbox("Freeze mana", &freezeMana);
-        ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
-        ImGui::Checkbox("Demo UI", &showUIDemo);
+        if (ImGui::CollapsingHeader("Options")) {
+            if (ImGui::BeginTable("split", 3)) {
+                ImGui::TableNextColumn(); ImGui::Checkbox("God mode", &godMode);
+                ImGui::TableNextColumn(); ImGui::Checkbox("Invisible", &invisible);
+                ImGui::TableNextColumn(); ImGui::Checkbox("Wear any items", &ignoreLevelRequirements);
 
-        static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
-        ImGui::SliderInt("Experience multiplier", &expMultiplier, 1, 50, "%d", flags);
+                ImGui::TableNextColumn(); ImGui::Checkbox("Fast casting", &fastCasting);
+                ImGui::TableNextColumn(); ImGui::Checkbox("Freeze mana", &freezeMana);
+                ImGui::TableNextColumn(); ImGui::Checkbox("Demo UI", &showUIDemo);
 
-        ImGui::BeginChild("Log");
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+                ImGui::EndTable();
+            }
 
-        for (auto i = _log.rbegin(); i != _log.rend(); i++) {
-            ImGui::Text("> %s", i->c_str());
+            static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
+            ImGui::SliderInt("Exp multiplier", &expMultiplier, 1, 50, "%d", flags);
         }
-            
-        ImGui::PopStyleVar();
-        ImGui::EndChild();
+        if (ImGui::CollapsingHeader("Logs")) {
+            ImGui::BeginChild("Log");
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+
+            for (auto i = _log.rbegin(); i != _log.rend(); i++) {
+                ImGui::Text("> %s", i->c_str());
+            }
+
+            ImGui::PopStyleVar();
+            ImGui::EndChild();
+        }
 
         ImGui::End();
         ImGui::PopFont();
