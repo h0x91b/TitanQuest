@@ -264,7 +264,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     ImGui::NewFrame();
 
     if (frame++ % 10 == 0) {
-        Character* c = (Character * )ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
+        Character* c = *(Character **)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
         c->godMode = godMode;
         c->invisible = invisible;
         c->fastCasting = fastCasting;
