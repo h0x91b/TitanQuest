@@ -257,6 +257,7 @@ SHORT _GetAsyncKeyState(int vKey) {
 }
 
 static LRESULT CALLBACK _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (isExiting) return CallWindowProc(originalWndProc, window, msg, wParam, lParam);
     ImGuiIO& io = ImGui::GetIO();
 
     POINT mPos;
@@ -281,6 +282,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     if (isExiting) return realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 #else
 HRESULT __stdcall _Present(IDXGISwapChain *pThis, UINT SyncInterval, UINT Flags) {
+    if (isExiting) return(pThis, SyncInterval, Flags);
 #endif
     //OutputDebugString(L"_Present\r\n");
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -731,6 +733,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     OutputDebugString(L"Dettach and shutdown everything\r\n");
 
     isExiting = true;
+
+    // give a time
+    Sleep(500);
 
     OutputDebugString(L"DetourTransactionBegin\r\n");
     DetourTransactionBegin();
