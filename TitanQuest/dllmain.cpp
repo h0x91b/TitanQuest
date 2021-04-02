@@ -108,6 +108,7 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
 
     void* d3dDevice[119];
     bool isExiting = false;
+    int modifierPoints = 0;
 #pragma endregion
 
 #pragma region thisCalls
@@ -263,19 +264,20 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    if (frame++ % 10 == 0) {
-        Character* c = *(Character **)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
-        if (c) {
-            c->godMode = godMode;
-            c->invisible = invisible;
-            c->fastCasting = fastCasting;
-        }
+    frame++;
 
-        //BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
-        //if (pGodMode) {
-        //    *pGodMode = godMode;
-        //}
+    Character* c = *(Character **)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
+    if (c) {
+        c->godMode = godMode;
+        c->invisible = invisible;
+        c->fastCasting = fastCasting;
+        modifierPoints = c->modifierPoints;
     }
+
+    //BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
+    //if (pGodMode) {
+    //    *pGodMode = godMode;
+    //}
 
     if (showUIDemo) {
         ImGui::ShowDemoWindow(&showUIDemo);
@@ -284,11 +286,17 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     {
         ImGui::PushFont(defFont);
         ImGui::SetNextWindowBgAlpha(0.35f);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(400, 0), ImVec2(FLT_MAX, FLT_MAX)); // window Width > 100, Height > 0
+
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.FrameBorderSize = 1.0f;
+        style.FrameRounding = 3.0f;
+
         ImGuiWindowFlags windowFlags = 0;
         // windowFlags |= ImGuiWindowFlags_NoBackground;
         ImGui::Begin("The tool", 0, windowFlags);
 
-        if (ImGui::CollapsingHeader("Options")) {
+        if (ImGui::CollapsingHeader("Options", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::BeginTable("split", 3)) {
                 ImGui::TableNextColumn(); ImGui::Checkbox("God mode", &godMode);
                 ImGui::TableNextColumn(); ImGui::Checkbox("Invisible", &invisible);
@@ -303,6 +311,24 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
 
             static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
             ImGui::SliderInt("Exp multiplier", &expMultiplier, 1, 50, "%d", flags);
+
+            float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("Modifier points:");
+            ImGui::SameLine();
+            ImGui::PushButtonRepeat(true);
+            if (ImGui::ArrowButton("##left", ImGuiDir_Left)) { 
+                modifierPoints--;
+                if(c) c->modifierPoints--;
+            }
+            ImGui::SameLine(0.0f, spacing);
+            if (ImGui::ArrowButton("##right", ImGuiDir_Right)) { 
+                modifierPoints++;
+                if (c) c->modifierPoints++;
+            }
+            ImGui::PopButtonRepeat();
+            ImGui::SameLine();
+            ImGui::Text("%d", modifierPoints);
         }
         if (ImGui::CollapsingHeader("Logs")) {
             ImGui::BeginChild("Log");
