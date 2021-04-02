@@ -41,6 +41,9 @@ CharacterAddMoney* realCharacterAddMoney = nullptr;
 
 typedef uint (__fastcall GetItemCost)(void* _this, DWORD edx, bool p1);
 GetItemCost* realGetItemCost = nullptr;
+
+//typedef WINUSERAPI SHORT(WINAPI pGetAsyncKeyState)(int);
+static SHORT(WINAPI* realGetAsyncKeyState)(int vKey) = GetAsyncKeyState;
 #pragma endregion
 
 #pragma region macros
@@ -174,7 +177,9 @@ thisCallHook(GetMainPlayer, GameEngine*, Player*) {
     // log("GetMainPlayer");
     return realGetMainPlayer(_this, _edx);
 }
+#pragma endregion
 
+#pragma region cdeclcalls
 // 2 - DWORD __cdecl CreateRenderDevice(Engine *param_1)
 cdeclCallHook(CreateRenderDevice, DWORD, Engine* param_1) {
     log("CreateRenderDevice");
@@ -195,10 +200,19 @@ void log(const char *fmt, ...) {
     auto len = vsnprintf(buf, 1024, fmt, args);
     va_end(args);
     _log.push_back(buf);
+    OutputDebugStringA("log: ");
+    OutputDebugStringA(buf);
+    OutputDebugStringA("\r\n");
 
     if (_log.size() > 100) {
         _log.erase(_log.begin());
     }
+}
+
+SHORT _GetAsyncKeyState(int vKey) {
+    SHORT state = realGetAsyncKeyState(vKey);
+    log("_GetAsyncKeyState %i LBTN %i", vKey, VK_LBUTTON);
+    return state;
 }
 
 static LRESULT CALLBACK _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -419,18 +433,18 @@ bool GetD3D9Device(void** pTable, size_t size) {
 }
 
 DWORD WINAPI MainThread(HMODULE hModule) {
-
+    log("GetD3D9Device dummy");
     // DirectX dummy method to find vt
     if (GetD3D9Device(d3dDevice, sizeof(d3dDevice))) {
 
     }
 
+    log("DetourTransactionBegin");
+
     DetourRestoreAfterWith();
 
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
-
-    log("DLL_PROCESS_ATTACH");
 
     HMODULE gameDll = GetModuleHandleA("game.dll");
     log("gameDll %08X", gameDll);
@@ -498,15 +512,6 @@ DWORD WINAPI MainThread(HMODULE hModule) {
 
     pVTable = *reinterpret_cast<DWORD**>(g_pd3dDevice);
 
-    //        realEndScene = (EndScene)pVTable[42];
-    realReset = (Reset)pVTable[16];
-    realPresent = (Present)pVTable[17];
-
-    //      pVTable[42] = (DWORD)_EndScene;
-
-            //pVTable[17] = (DWORD)_Present;
-            //pVTable[16] = (DWORD)_Reset;
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -520,6 +525,8 @@ DWORD WINAPI MainThread(HMODULE hModule) {
 
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX9_Init(g_pd3dDevice);
+
+    // DetourAttach(&(PVOID&)realGetAsyncKeyState, _GetAsyncKeyState);
 
     DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
     DetourAttach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
@@ -539,6 +546,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Attach(CreateRenderDevice);
     Attach(ResetRenderDevice);
 
+    realReset = (Reset)pVTable[16];
+    realPresent = (Present)pVTable[17];
+
     //DetourAttach((PVOID*)pVTable[17], _Present);
     //DetourAttach(&(PVOID&)pVTable[17], _Present);
     DetourAttach(&(PVOID&)realPresent, _Present);
@@ -547,7 +557,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
     DetourTransactionCommit();
 
-    while (!GetAsyncKeyState(VK_END)) {
+    while (!realGetAsyncKeyState(VK_END)) {
         Sleep(50);
     }
 
@@ -573,6 +583,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(originalWndProc));
 
     OutputDebugString(L"DetourDetach all\r\n");
+
+    // DetourDetach(&(PVOID&)realGetAsyncKeyState, _GetAsyncKeyState);
+
     DetourDetach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
     DetourDetach(&(PVOID&)realCharacterAddMoney, _CharacterAddMoney);
     DetourDetach(&(PVOID&)realGetItemCost, _GetItemCost);
