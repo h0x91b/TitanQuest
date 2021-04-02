@@ -121,6 +121,7 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
     bool freezeMana = false;
     ImFont* defFont = nullptr;
     int expMultiplier = 1;
+    int goldMultiplier = 1;
     Engine* pEngine = nullptr;
 #ifdef USE_DX9
     static LPDIRECT3D9 g_pD3D = NULL;
@@ -224,6 +225,15 @@ thisCallHook(GetMainPlayer, GameEngine*, Player*) {
 thisCallHook(GetSkillPoints, Character*, uint) {
     // log("GetSkillPoints");
     return realGetSkillPoints(_this, _edx);
+}
+
+// 16514 - void __thiscall GAME::Character::TakeBonus(Character* this, Bonus* bonus, bool param_2, bool param_3, PlayStatsLifeType param_4)
+thisCallHook(TakeBonus, Character*, void, Bonus* bonus, bool param_2, bool param_3, uint param_4) {
+    log("TakeBonus");
+    if (bonus->money != 0)
+        bonus->money *= goldMultiplier;
+
+    realTakeBonus(_this, _edx, bonus, param_2, param_3, param_4);
 }
 #pragma endregion
 
@@ -371,6 +381,7 @@ HRESULT __stdcall _Present(IDXGISwapChain *pThis, UINT SyncInterval, UINT Flags)
 
             static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
             ImGui::SliderInt("Exp multiplier", &expMultiplier, 1, 50, "%d", flags);
+            ImGui::SliderInt("Gold multiplier", &goldMultiplier, 1, 100, "%d", flags);
 
             // modifier points
             {
@@ -641,6 +652,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     ProcAddr(gameDll, ReceiveExperience, 14523);
     ProcAddr(gameDll, GetMainPlayer, 9837);
     ProcAddr(gameDll, GetSkillPoints, 10982);
+    ProcAddr(gameDll, TakeBonus, 16514);
 
 
     ProcAddr(direct3d_dll, CreateRenderDevice, 2);
@@ -742,6 +754,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Attach(CreateRenderDevice);
     Attach(ResetRenderDevice);
     Attach(GetSkillPoints);
+    Attach(TakeBonus);
 
 #ifdef USE_DX9
     realReset = (Reset)pVTable[16];
@@ -811,6 +824,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Detach(CreateRenderDevice);
     Detach(ResetRenderDevice);
     Detach(GetSkillPoints);
+    Detach(TakeBonus);
+
+
 #ifdef USE_DX9
     //        DetourDetach((PVOID*)pVTable[17], _Present);
     //        DetourDetach((PVOID*)pVTable[16], _Reset);

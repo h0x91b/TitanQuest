@@ -42,6 +42,40 @@ struct AutoClass1 { /* PlaceHolder Class Structure */
     int * field_0x14;
 };
 
+typedef struct Bonus Bonus, *PBonus;
+
+struct Bonus { /* PlaceHolder Structure */
+    undefined field_0x0;
+    undefined field_0x1;
+    undefined field_0x2;
+    undefined field_0x3;
+    float field_0x4;
+    float field_0x8;
+    float field_0xc;
+    float field_0x10;
+    int money;
+    int skillPoints;
+    int modifierPoints;
+    uint exp;
+    undefined field_0x24;
+    undefined field_0x25;
+    undefined field_0x26;
+    undefined field_0x27;
+    undefined field_0x28;
+    undefined field_0x29;
+    undefined field_0x2a;
+    undefined field_0x2b;
+    undefined field_0x2c;
+    undefined field_0x2d;
+    undefined field_0x2e;
+    undefined field_0x2f;
+    undefined field_0x30;
+    undefined field_0x31;
+    undefined field_0x32;
+    undefined field_0x33;
+    int field_0x34;
+};
+
 typedef struct Character Character, *PCharacter;
 
 typedef struct CombatManager CombatManager, *PCombatManager;
