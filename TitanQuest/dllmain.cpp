@@ -3,13 +3,18 @@
 #include <detours.h>
 
 #include <Windows.h>
-#include <d3d9.h>
 #include <string>
 #include <vector>
 #include <iostream>
 
 #include "imgui.h"
+
+//#define USE_DX9
+#ifdef USE_DX9
+#include <d3d9.h>
 #include "imgui_impl_dx9.h"
+#endif
+
 #include "imgui_impl_win32.h"
 
 //#include "Character.h"
@@ -24,21 +29,22 @@ static_assert(sizeof(Character) == 0x1b38, "Wrong size of Character struct");
 #pragma region definitions
 void log(const char* fmt, ...);
 void* ByPtr(DWORD base, DWORD offset, ...);
+#ifdef USE_DX9
 HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters);
+#endif
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #pragma endregion
 
 #pragma region old style typedefs
-typedef HRESULT(__stdcall* EndScene) (IDirect3DDevice9*);
-EndScene realEndScene = nullptr;
-
+#ifdef USE_DX9
 typedef HRESULT(__stdcall* Present) (IDirect3DDevice9*, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion);
 Present realPresent = nullptr;
 
 // virtual HRESULT __stdcall IDirect3DDevice9::Reset(D3DPRESENT_PARAMETERS * pPresentationParameters)
 typedef HRESULT(__stdcall* Reset) (IDirect3DDevice9*, D3DPRESENT_PARAMETERS* pPresentationParameters);
 Reset realReset = nullptr;
+#endif
 
 typedef float (__fastcall CharacterAddMoney)(Character* _this, DWORD edx, uint money);
 CharacterAddMoney* realCharacterAddMoney = nullptr;
@@ -94,9 +100,11 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
     ImFont* defFont = nullptr;
     int expMultiplier = 1;
     Engine* pEngine = nullptr;
+#ifdef USE_DX9
     static LPDIRECT3D9 g_pD3D = NULL;
     static LPDIRECT3DDEVICE9 g_pd3dDevice = NULL;
     static D3DPRESENT_PARAMETERS g_d3dpp = {};
+#endif
 
     DWORD* pVTable;
     HWND hwnd;
@@ -239,6 +247,7 @@ static LRESULT CALLBACK _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lP
     return CallWindowProc(originalWndProc, window, msg, wParam, lParam);
 }
 
+#ifdef USE_DX9
 HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion) {
     if(isExiting) return realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
     //OutputDebugString(L"_Present\r\n");
@@ -409,11 +418,7 @@ HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentati
     
     return result;
 }
-
-HRESULT __stdcall _EndScene(IDirect3DDevice9* d) {
-    //OutputDebugString(L"_EndScene\r\n");
-    return realEndScene(d);
-}
+#endif
 
 float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money) {
     OutputDebugString(L"_CharacterAddMoney\r\n");
@@ -471,6 +476,7 @@ HWND GetProcessWindow() {
     return window;
 }
 
+#ifdef USE_DX9
 bool GetD3D9Device(void** pTable, size_t size) {
     if (!pTable) return false;
 
@@ -515,13 +521,17 @@ bool GetD3D9Device(void** pTable, size_t size) {
     pD3D->Release();
     return true;
 }
+#endif
 
 DWORD WINAPI MainThread(HMODULE hModule) {
     log("GetD3D9Device dummy");
+    
+#ifdef USE_DX9
     // DirectX dummy method to find vt
     if (GetD3D9Device(d3dDevice, sizeof(d3dDevice))) {
 
     }
+#endif
 
     log("DetourTransactionBegin");
 
@@ -555,6 +565,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     ProcAddr(direct3d_dll, CreateRenderDevice, 2);
     ProcAddr(direct3d_dll, ResetRenderDevice, 4);
 
+#ifdef USE_DX9
     log("getting dx");
 
     // "Engine.dll"+00365DF0 - pEngine
@@ -583,10 +594,12 @@ DWORD WINAPI MainThread(HMODULE hModule) {
 
     //BYTE* target2 = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
 
+
     log("getting g_pD3D");
     g_pD3D = (LPDIRECT3D9)dx->g_pD3D;
     log("getting g_pd3dDevice");
     g_pd3dDevice = (LPDIRECT3DDEVICE9)dx2->g_pd3dDevice;
+#endif
 
     //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
     hwnd = FindWindow(NULL, L"Titan Quest Anniversary Edition");
@@ -594,7 +607,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     //originalWndProc = WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(_wndProc)));
     originalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_wndProc)));
 
+#ifdef USE_DX9
     pVTable = *reinterpret_cast<DWORD**>(g_pd3dDevice);
+#endif
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -608,8 +623,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     //ImGui::StyleColorsClassic();
 
     ImGui_ImplWin32_Init(hwnd);
+#ifdef USE_DX9
     ImGui_ImplDX9_Init(g_pd3dDevice);
-
+#endif
     // DetourAttach(&(PVOID&)realGetAsyncKeyState, _GetAsyncKeyState);
 
     DetourAttach(&(PVOID&)realGetCurrentMana, _GetCurrentMana);
@@ -630,6 +646,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Attach(CreateRenderDevice);
     Attach(ResetRenderDevice);
 
+#ifdef USE_DX9
     realReset = (Reset)pVTable[16];
     realPresent = (Present)pVTable[17];
 
@@ -639,6 +656,8 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     DetourAttach(&(PVOID&)realReset, _Reset);
     //DetourAttach((PVOID*)pVTable[16], _Reset);
     //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
+#endif
+
     DetourTransactionCommit();
 
     while (!realGetAsyncKeyState(VK_END)) {
@@ -656,8 +675,11 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
 
+#ifdef USE_DX9
     OutputDebugString(L"ImGui_ImplDX9_Shutdown\r\n");
     ImGui_ImplDX9_Shutdown();
+#endif
+
     OutputDebugString(L"ImGui_ImplWin32_Shutdown\r\n");
     ImGui_ImplWin32_Shutdown();
     OutputDebugString(L"DestroyContext\r\n");
@@ -686,10 +708,12 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Detach(GetMainPlayer);
     Detach(CreateRenderDevice);
     Detach(ResetRenderDevice);
+#ifdef USE_DX9
     //        DetourDetach((PVOID*)pVTable[17], _Present);
     //        DetourDetach((PVOID*)pVTable[16], _Reset);
     DetourDetach(&(PVOID&)realPresent, _Present);
     DetourDetach(&(PVOID&)realReset, _Reset);
+#endif
     DetourTransactionCommit();
 
     //    pVTable[42] = (DWORD)realEndScene;
