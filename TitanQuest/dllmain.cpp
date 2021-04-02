@@ -1,6 +1,7 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "pch.h"
 #include <detours.h>
+#pragma comment(lib, "detours.lib")
 
 #include <Windows.h>
 #include <string>
@@ -13,6 +14,17 @@
 #ifdef USE_DX9
 #include <d3d9.h>
 #include "imgui_impl_dx9.h"
+#pragma comment(lib, "d3d9.lib")
+#else
+// reference for hooking: https://github.com/guided-hacking/GH_D3D11_Hook/tree/master
+#include <d3d11.h>
+#include <d3dcompiler.h>
+
+#include "imgui_impl_dx11.h"
+#include "D3D_VMT_Indices.h"
+
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "d3dcompiler.lib")
 #endif
 
 #include "imgui_impl_win32.h"
@@ -44,6 +56,15 @@ Present realPresent = nullptr;
 // virtual HRESULT __stdcall IDirect3DDevice9::Reset(D3DPRESENT_PARAMETERS * pPresentationParameters)
 typedef HRESULT(__stdcall* Reset) (IDirect3DDevice9*, D3DPRESENT_PARAMETERS* pPresentationParameters);
 Reset realReset = nullptr;
+#else
+ID3D11Device* g_pd3dDevice = nullptr;
+ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
+IDXGISwapChain* g_pSwapchain = nullptr;
+
+#define VMT_PRESENT (UINT)IDXGISwapChainVMT::Present
+
+typedef HRESULT(__stdcall* Present) (IDXGISwapChain* pThis, UINT SyncInterval, UINT Flags);
+Present realPresent = nullptr;
 #endif
 
 typedef float (__fastcall CharacterAddMoney)(Character* _this, DWORD edx, uint money);
@@ -242,14 +263,17 @@ static LRESULT CALLBACK _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lP
     if (io.WantCaptureMouse
         || io.WantCaptureKeyboard
     ) {
-        return TRUE;
+        //return TRUE;
     }
     return CallWindowProc(originalWndProc, window, msg, wParam, lParam);
 }
 
 #ifdef USE_DX9
 HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const RECT* pDestRect, HWND hDestWindowOverride, const RGNDATA* pDirtyRegion) {
-    if(isExiting) return realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+    if (isExiting) return realPresent(d, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+#else
+HRESULT __stdcall _Present(IDXGISwapChain *pThis, UINT SyncInterval, UINT Flags) {
+#endif
     //OutputDebugString(L"_Present\r\n");
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
@@ -270,7 +294,11 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     }
 
     // Start the Dear ImGui frame
+#ifdef USE_DX9
     ImGui_ImplDX9_NewFrame();
+#else
+    ImGui_ImplDX11_NewFrame();
+#endif
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
@@ -388,6 +416,7 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     // Rendering
     ImGui::EndFrame();
 
+#ifdef USE_DX9
     g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
     g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
     g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
@@ -406,8 +435,14 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         _Reset(d, &g_d3dpp);
     }
     return result;
+#else
+    ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    return realPresent(pThis, SyncInterval, Flags);
+#endif
 }
 
+#ifdef USE_DX9
 HRESULT __stdcall _Reset(IDirect3DDevice9* d, D3DPRESENT_PARAMETERS* pPresentationParameters) {
     if (isExiting) return realReset(d, pPresentationParameters);
     OutputDebugString(L"_Reset\r\n");
@@ -599,6 +634,14 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     g_pD3D = (LPDIRECT3D9)dx->g_pD3D;
     log("getting g_pd3dDevice");
     g_pd3dDevice = (LPDIRECT3DDEVICE9)dx2->g_pd3dDevice;
+#else
+    g_pd3dDevice = *(ID3D11Device**)ByPtr((DWORD)engineDll, 0x00365E28, 0x14, 0x4, 0x28, -1);
+    g_pSwapchain = *(IDXGISwapChain**)ByPtr((DWORD)engineDll, 0x00366740, 0x34, -1);
+    g_pd3dDeviceContext = *(ID3D11DeviceContext**)ByPtr((DWORD)engineDll, 0x00366740, 0x2c, -1);
+
+    // reference for how to - https://github.com/guided-hacking/GH_D3D11_Hook/tree/master
+    void** pVMT = *(void***)g_pSwapchain;
+    realPresent = (Present)(pVMT[VMT_PRESENT]);
 #endif
 
     //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -625,6 +668,8 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     ImGui_ImplWin32_Init(hwnd);
 #ifdef USE_DX9
     ImGui_ImplDX9_Init(g_pd3dDevice);
+#else
+    ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 #endif
     // DetourAttach(&(PVOID&)realGetAsyncKeyState, _GetAsyncKeyState);
 
@@ -656,6 +701,8 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     DetourAttach(&(PVOID&)realReset, _Reset);
     //DetourAttach((PVOID*)pVTable[16], _Reset);
     //DetourAttach(&(LPVOID&)pVTable[42], _EndScene);
+#else
+    DetourAttach(&(PVOID&)realPresent, _Present);
 #endif
 
     DetourTransactionCommit();
@@ -678,6 +725,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
 #ifdef USE_DX9
     OutputDebugString(L"ImGui_ImplDX9_Shutdown\r\n");
     ImGui_ImplDX9_Shutdown();
+#else
+    OutputDebugString(L"ImGui_ImplDX11_Shutdown\r\n");
+    ImGui_ImplDX11_Shutdown();
 #endif
 
     OutputDebugString(L"ImGui_ImplWin32_Shutdown\r\n");
@@ -713,6 +763,8 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     //        DetourDetach((PVOID*)pVTable[16], _Reset);
     DetourDetach(&(PVOID&)realPresent, _Present);
     DetourDetach(&(PVOID&)realReset, _Reset);
+#else
+    DetourDetach(&(PVOID&)realPresent, _Present);
 #endif
     DetourTransactionCommit();
 
