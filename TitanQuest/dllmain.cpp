@@ -111,8 +111,11 @@ thisCallHook(GetManaLimit, Character *, float) {
 }
 
 thisCallHook(GetCurrentMana, Character *, float) {
-    if (freezeMana)
-        return realGetManaLimit(_this, _edx);
+    if (freezeMana) {
+        //log("this->mana %f - %f", _this->mana, *(float*)((DWORD)_this + 0x760));
+        //*(float*)((DWORD)_this + 0x760) = realGetManaLimit(_this, _edx);
+        _this->mana = realGetManaLimit(_this, _edx);
+    }
     return realGetCurrentMana(_this, _edx);
 }
 
