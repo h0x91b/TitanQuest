@@ -17,6 +17,10 @@
 //#include "dx.h"
 #include "TQ_Types.h"
 
+#pragma region asserts
+static_assert(sizeof(Character) == 0x1b38, "Wrong size of Character struct");
+#pragma endregion
+
 #pragma region definitions
 void log(const char* fmt, ...);
 void* ByPtr(DWORD base, DWORD offset, ...);
@@ -81,7 +85,9 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
 #pragma endregion
 
 #pragma region vars
-    bool godMode = 0;
+    bool godMode = false;
+    bool fastCasting = false;
+    bool invisible = false;
     int frame = 0;
     bool ignoreLevelRequirements = false;
     bool freezeMana = false;
@@ -258,10 +264,15 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
     ImGui::NewFrame();
 
     if (frame++ % 10 == 0) {
-        BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
-        if (pGodMode) {
-            *pGodMode = godMode;
-        }
+        Character* c = (Character * )ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
+        c->godMode = godMode;
+        c->invisible = invisible;
+        c->fastCasting = fastCasting;
+
+        //BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
+        //if (pGodMode) {
+        //    *pGodMode = godMode;
+        //}
     }
 
     if (showUIDemo) {
@@ -274,6 +285,8 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
         ImGui::Begin("The tool", 0, windowFlags);
 
         ImGui::Checkbox("God mode", &godMode);
+        ImGui::Checkbox("Fast casting", &fastCasting);
+        ImGui::Checkbox("Invisible", &invisible);
         ImGui::Checkbox("Freeze mana", &freezeMana);
         ImGui::Checkbox("Ignore items level requirement", &ignoreLevelRequirements);
         ImGui::Checkbox("Demo UI", &showUIDemo);
