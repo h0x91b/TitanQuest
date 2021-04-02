@@ -60,6 +60,7 @@ Reset realReset = nullptr;
 ID3D11Device* g_pd3dDevice = nullptr;
 ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 IDXGISwapChain* g_pSwapchain = nullptr;
+ID3D11RenderTargetView* mainRenderTargetView;
 
 #define VMT_PRESENT (UINT)IDXGISwapChainVMT::Present
 
@@ -256,14 +257,21 @@ SHORT _GetAsyncKeyState(int vKey) {
 }
 
 static LRESULT CALLBACK _wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
-    ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam);
-
     ImGuiIO& io = ImGui::GetIO();
+
+    POINT mPos;
+    GetCursorPos(&mPos);
+    ScreenToClient(window, &mPos);
+    ImGui::GetIO().MousePos.x = mPos.x;
+    ImGui::GetIO().MousePos.y = mPos.y;
+
+    // ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam);
 
     if (io.WantCaptureMouse
         || io.WantCaptureKeyboard
     ) {
-        //return TRUE;
+        ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam);
+        return TRUE;
     }
     return CallWindowProc(originalWndProc, window, msg, wParam, lParam);
 }
@@ -437,6 +445,10 @@ HRESULT __stdcall _Present(IDXGISwapChain *pThis, UINT SyncInterval, UINT Flags)
     return result;
 #else
     ImGui::Render();
+
+    // https://niemand.com.ar/2019/01/01/how-to-hook-directx-11-imgui/
+    g_pd3dDeviceContext->OMSetRenderTargets(1, &mainRenderTargetView, NULL);
+
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     return realPresent(pThis, SyncInterval, Flags);
 #endif
@@ -647,16 +659,15 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     //auto hwnd = CreateWindow(L"STATIC", L"Dummy window", 0, 0, 0, 0, 0, 0, 0, 0, 0);
     hwnd = FindWindow(NULL, L"Titan Quest Anniversary Edition");
 
-    //originalWndProc = WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(_wndProc)));
-    originalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_wndProc)));
-
 #ifdef USE_DX9
     pVTable = *reinterpret_cast<DWORD**>(g_pd3dDevice);
 #endif
+    originalWndProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)_wndProc);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.MouseDrawCursor = false;
 
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -670,6 +681,12 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     ImGui_ImplDX9_Init(g_pd3dDevice);
 #else
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+    ImGui::GetIO().ImeWindowHandle = hwnd;
+    ID3D11Texture2D* pBackBuffer;
+
+    g_pSwapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
+    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, NULL, &mainRenderTargetView);
+    pBackBuffer->Release();
 #endif
     // DetourAttach(&(PVOID&)realGetAsyncKeyState, _GetAsyncKeyState);
 
@@ -714,9 +731,6 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     OutputDebugString(L"Dettach and shutdown everything\r\n");
 
     isExiting = true;
-
-    // SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(originalWndProc));
-    // WNDPROC(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(originalWndProc)));
 
     OutputDebugString(L"DetourTransactionBegin\r\n");
     DetourTransactionBegin();
