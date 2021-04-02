@@ -109,6 +109,7 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
     void* d3dDevice[119];
     bool isExiting = false;
     int modifierPoints = 0;
+    int gold = 0;
 #pragma endregion
 
 #pragma region thisCalls
@@ -266,12 +267,16 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
 
     frame++;
 
-    Character* c = *(Character **)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
+    static Character* c = nullptr;
+
+    if(!c)
+        c = *(Character **)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, -1);
     if (c) {
         c->godMode = godMode;
         c->invisible = invisible;
         c->fastCasting = fastCasting;
         modifierPoints = c->modifierPoints;
+        gold = c->money;
     }
 
     //BYTE* pGodMode = (BYTE*)ByPtr((DWORD)engineDll, 0x00365DF0, 0x218, 0x74, 0xc25, -1);
@@ -312,25 +317,50 @@ HRESULT __stdcall _Present(IDirect3DDevice9* d, const RECT* pSourceRect, const R
             static ImGuiSliderFlags flags = ImGuiSliderFlags_None;
             ImGui::SliderInt("Exp multiplier", &expMultiplier, 1, 50, "%d", flags);
 
-            float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-            ImGui::AlignTextToFramePadding();
-            ImGui::Text("Modifier points:");
-            ImGui::SameLine();
-            ImGui::PushButtonRepeat(true);
-            if (ImGui::ArrowButton("##left", ImGuiDir_Left)) { 
-                modifierPoints--;
-                if(c) c->modifierPoints--;
+            // modifier points
+            {
+                float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("Modifier points:");
+                ImGui::SameLine();
+                ImGui::PushButtonRepeat(true);
+                if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+                    modifierPoints--;
+                    if (c) c->modifierPoints--;
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+                    modifierPoints++;
+                    if (c) c->modifierPoints++;
+                }
+                ImGui::PopButtonRepeat();
+                ImGui::SameLine();
+                ImGui::Text("%d", modifierPoints);
             }
-            ImGui::SameLine(0.0f, spacing);
-            if (ImGui::ArrowButton("##right", ImGuiDir_Right)) { 
-                modifierPoints++;
-                if (c) c->modifierPoints++;
+            
+            // gold
+            {
+                float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("Gold:");
+                ImGui::SameLine();
+                ImGui::PushButtonRepeat(true);
+                if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+                    gold--;
+                    if (c) c->money--;
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+                    gold++;
+                    if (c) c->money++;
+                }
+                ImGui::PopButtonRepeat();
+                ImGui::SameLine();
+                ImGui::Text("%d", gold);
             }
-            ImGui::PopButtonRepeat();
-            ImGui::SameLine();
-            ImGui::Text("%d", modifierPoints);
         }
-        if (ImGui::CollapsingHeader("Logs")) {
+
+        if (ImGui::CollapsingHeader("Logs", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::BeginChild("Log");
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
@@ -393,8 +423,8 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money) {
 uint __fastcall _GetItemCost(void* _this, DWORD edx, bool p1) {
     OutputDebugString(L"_GetItemCost\r\n");
 
-    return 50000;
-    //return realCharacterAddMoney(_this, edx, money * 15);
+    // return 50000;
+    return realGetItemCost(_this, edx, p1);
 }
 
 void* ByPtr(DWORD base, DWORD offset, ...)
