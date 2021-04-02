@@ -18,7 +18,7 @@ typedef struct AnyStore AnyStore, *PAnyStore;
 
 struct AnyStore { /* PlaceHolder Class Structure */
     struct AnyStore * len;
-    float * spaceFor;
+    float * next;
     float * size;
 };
 
@@ -54,8 +54,6 @@ typedef struct GarmentManager GarmentManager, *PGarmentManager;
 
 typedef struct CharacterBio CharacterBio, *PCharacterBio;
 
-typedef struct PlayStats PlayStats, *PPlayStats;
-
 typedef struct Entity Entity, *PEntity;
 
 typedef enum EquipLocations {
@@ -73,9 +71,6 @@ struct Entity { /* PlaceHolder Class Structure */
 };
 
 struct SkillManager { /* PlaceHolder Class Structure */
-};
-
-struct PlayStats { /* PlaceHolder Class Structure */
 };
 
 struct Character { /* PlaceHolder Structure */
@@ -1159,20 +1154,11 @@ struct Character { /* PlaceHolder Structure */
     undefined field_0xb31;
     undefined field_0xb32;
     undefined field_0xb33;
-    undefined1 level; /* Created by retype action */
-    undefined field_0xb35;
-    undefined field_0xb36;
-    undefined field_0xb37;
-    undefined1 exp; /* Created by retype action */
-    undefined field_0xb39;
-    undefined field_0xb3a;
-    undefined field_0xb3b;
+    int level; /* Created by retype action */
+    int exp; /* Created by retype action */
     int modifierPoints;
-    undefined field_0xb40;
-    undefined field_0xb41;
-    undefined field_0xb42;
-    undefined field_0xb43;
-    struct PlayStats PlayStats; /* Created by retype action */
+    int skillPoints; /* Created by retype action */
+    undefined field_0xb44;
     undefined field_0xb45;
     undefined field_0xb46;
     undefined field_0xb47;
@@ -1380,7 +1366,7 @@ struct Character { /* PlaceHolder Structure */
     undefined4 field_0xc20;
     undefined field_0xc24;
     bool godMode; /* Created by retype action */
-    undefined field_0xc26;
+    bool omnipotent;
     undefined field_0xc27;
     undefined field_0xc28;
     undefined field_0xc29;
@@ -4448,7 +4434,7 @@ struct GarmentManager { /* PlaceHolder Class Structure */
 };
 
 struct CharacterBio { /* PlaceHolder Class Structure */
-    undefined * * vftable;
+    undefined * * vt;
     undefined field_0x4;
     undefined field_0x5;
     undefined field_0x6;
@@ -4458,7 +4444,7 @@ struct CharacterBio { /* PlaceHolder Class Structure */
     float field_0x10;
     undefined4 field_0x14;
     undefined4 field_0x18;
-    undefined4 field_0x1c;
+    undefined4 hp;
     undefined4 field_0x20;
     undefined4 field_0x24;
     undefined4 field_0x28;
@@ -4466,10 +4452,10 @@ struct CharacterBio { /* PlaceHolder Class Structure */
     undefined field_0x2d;
     undefined field_0x2e;
     undefined field_0x2f;
-    undefined4 field_0x30;
+    undefined4 mp;
     float field_0x34;
     undefined4 field_0x38;
-    undefined * * field_0x3c;
+    undefined * * vt_CharAttributeStore_Bio;
     undefined4 field_0x40;
     undefined4 field_0x44;
     undefined4 field_0x48;
@@ -4487,11 +4473,11 @@ struct CharacterBio { /* PlaceHolder Class Structure */
     undefined field_0x5d;
     undefined field_0x5e;
     undefined field_0x5f;
-    undefined field_0x60;
+    undefined1 maxLife; /* Created by retype action */
     undefined field_0x61;
     undefined field_0x62;
     undefined field_0x63;
-    float field_0x64;
+    float maxMana;
     undefined field_0x68;
     undefined field_0x69;
     undefined field_0x6a;
@@ -5229,7 +5215,7 @@ struct CharacterBio { /* PlaceHolder Class Structure */
     undefined4 field_0x370;
     undefined4 field_0x374;
     undefined4 field_0x378;
-    undefined * * field_0x37c;
+    undefined * * vt_DefenseAttributeStore_Character;
     undefined4 field_0x380;
     undefined4 field_0x384;
     undefined4 field_0x388;
@@ -10073,6 +10059,11 @@ struct Player { /* PlaceHolder Class Structure */
     undefined * * * field_0xfe8;
     undefined4 field_0xfec;
     undefined field_0xff0;
+};
+
+typedef struct PlayStats PlayStats, *PPlayStats;
+
+struct PlayStats { /* PlaceHolder Class Structure */
 };
 
 typedef struct PostProcessSectorData PostProcessSectorData, *PPostProcessSectorData;

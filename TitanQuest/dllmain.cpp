@@ -139,6 +139,7 @@ float __fastcall _CharacterAddMoney(Character* _this, DWORD edx, uint money)
     void* d3dDevice[119];
     bool isExiting = false;
     int modifierPoints = 0;
+    int skillPoints = 0;
     int gold = 0;
 #pragma endregion
 
@@ -217,6 +218,12 @@ thisCallHook(ReceiveExperience, Character*, void, uint exp, bool someBool) {
 thisCallHook(GetMainPlayer, GameEngine*, Player*) {
     // log("GetMainPlayer");
     return realGetMainPlayer(_this, _edx);
+}
+
+// 10982 - uint __thiscall GAME::Character::GetSkillPoints(Character *this)
+thisCallHook(GetSkillPoints, Character*, uint) {
+    // log("GetSkillPoints");
+    return realGetSkillPoints(_this, _edx);
 }
 #pragma endregion
 
@@ -323,6 +330,7 @@ HRESULT __stdcall _Present(IDXGISwapChain *pThis, UINT SyncInterval, UINT Flags)
         c->invisible = invisible;
         c->fastCasting = fastCasting;
         modifierPoints = c->modifierPoints;
+        skillPoints = c->skillPoints;
         gold = c->money;
     }
 
@@ -383,6 +391,27 @@ HRESULT __stdcall _Present(IDXGISwapChain *pThis, UINT SyncInterval, UINT Flags)
                 ImGui::PopButtonRepeat();
                 ImGui::SameLine();
                 ImGui::Text("%d", modifierPoints);
+            }
+
+            // skill points
+            {
+                float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("Skill points:");
+                ImGui::SameLine();
+                ImGui::PushButtonRepeat(true);
+                if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+                    skillPoints--;
+                    if (c) c->skillPoints--;
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+                    skillPoints++;
+                    if (c) c->skillPoints++;
+                }
+                ImGui::PopButtonRepeat();
+                ImGui::SameLine();
+                ImGui::Text("%d", skillPoints);
             }
             
             // gold
@@ -611,6 +640,9 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     ProcAddr(gameDll, SetBaseValue, 15499);
     ProcAddr(gameDll, ReceiveExperience, 14523);
     ProcAddr(gameDll, GetMainPlayer, 9837);
+    ProcAddr(gameDll, GetSkillPoints, 10982);
+
+
     ProcAddr(direct3d_dll, CreateRenderDevice, 2);
     ProcAddr(direct3d_dll, ResetRenderDevice, 4);
 
@@ -709,6 +741,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Attach(GetMainPlayer);
     Attach(CreateRenderDevice);
     Attach(ResetRenderDevice);
+    Attach(GetSkillPoints);
 
 #ifdef USE_DX9
     realReset = (Reset)pVTable[16];
@@ -777,6 +810,7 @@ DWORD WINAPI MainThread(HMODULE hModule) {
     Detach(GetMainPlayer);
     Detach(CreateRenderDevice);
     Detach(ResetRenderDevice);
+    Detach(GetSkillPoints);
 #ifdef USE_DX9
     //        DetourDetach((PVOID*)pVTable[17], _Present);
     //        DetourDetach((PVOID*)pVTable[16], _Reset);
